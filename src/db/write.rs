@@ -4,12 +4,13 @@ use rusqlite_migration::{Migrations, M};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crate::schema::SpanRow;
+use crate::schema::{LogRow, MetricRow, SpanRow};
 
 fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(include_str!(
-        "../../migrations/01_spans.sql"
-    ))])
+    Migrations::new(vec![
+        M::up(include_str!("../../migrations/01_spans.sql")),
+        M::up(include_str!("../../migrations/02_logs_metrics.sql")),
+    ])
 }
 
 /// Write-optimized SQLite connection with WAL mode
@@ -82,6 +83,98 @@ impl WriteDb {
         conn.execute("COMMIT", [])?;
 
         tracing::debug!(count = spans.len(), "Inserted spans to SQLite");
+        Ok(())
+    }
+
+    /// Insert multiple logs in a single transaction
+    pub fn insert_logs(&self, logs: &[LogRow]) -> Result<()> {
+        if logs.is_empty() {
+            return Ok(());
+        }
+
+        let conn = self.conn.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        conn.execute("BEGIN TRANSACTION", [])?;
+
+        {
+            let mut stmt = conn.prepare_cached(
+                r#"
+                INSERT INTO logs
+                    (timestamp, observed_timestamp, trace_id, span_id, severity_number,
+                     severity_text, body, service_name, attributes, resource_attrs, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                "#,
+            )?;
+
+            for log in logs {
+                stmt.execute(rusqlite::params![
+                    log.timestamp,
+                    log.observed_timestamp,
+                    log.trace_id,
+                    log.span_id,
+                    log.severity_number,
+                    log.severity_text,
+                    log.body,
+                    log.service_name,
+                    log.attributes,
+                    log.resource_attrs,
+                    log.created_at,
+                ])?;
+            }
+        }
+
+        conn.execute("COMMIT", [])?;
+
+        tracing::debug!(count = logs.len(), "Inserted logs to SQLite");
+        Ok(())
+    }
+
+    /// Insert multiple metrics in a single transaction
+    pub fn insert_metrics(&self, metrics: &[MetricRow]) -> Result<()> {
+        if metrics.is_empty() {
+            return Ok(());
+        }
+
+        let conn = self.conn.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        conn.execute("BEGIN TRANSACTION", [])?;
+
+        {
+            let mut stmt = conn.prepare_cached(
+                r#"
+                INSERT INTO metrics
+                    (name, description, unit, kind, timestamp, service_name,
+                     value, sum, count, min, max, quantiles, buckets,
+                     attributes, resource_attrs, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                "#,
+            )?;
+
+            for metric in metrics {
+                stmt.execute(rusqlite::params![
+                    metric.name,
+                    metric.description,
+                    metric.unit,
+                    metric.kind,
+                    metric.timestamp,
+                    metric.service_name,
+                    metric.value,
+                    metric.sum,
+                    metric.count,
+                    metric.min,
+                    metric.max,
+                    metric.quantiles,
+                    metric.buckets,
+                    metric.attributes,
+                    metric.resource_attrs,
+                    metric.created_at,
+                ])?;
+            }
+        }
+
+        conn.execute("COMMIT", [])?;
+
+        tracing::debug!(count = metrics.len(), "Inserted metrics to SQLite");
         Ok(())
     }
 

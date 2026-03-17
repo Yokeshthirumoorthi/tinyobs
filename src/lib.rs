@@ -1,19 +1,19 @@
 //! TinyObs - Minimal Observability Storage
 //!
-//! A pure ingest + storage layer for OTLP traces. No REST API, no dashboard.
-//! Consumers query via DuckDB SQL and build their own endpoints.
+//! A pure ingest + storage layer for OTLP telemetry (traces, logs, metrics).
+//! No REST API, no dashboard. Consumers query via DuckDB SQL and build their own endpoints.
 //!
 //! # Architecture
 //!
 //! ```text
-//! OTLP Span -> POST /v1/traces -> SQLite (hot, <10s)
-//!                                      |
-//!                                      v (compaction, 5s)
-//!                                 Parquet files (cold)
-//!                                      |
-//!                                      v (merge, hourly)
-//!                                 Merged Parquet
-//!                                      |
+//! OTLP Data -> POST /v1/{traces,logs,metrics} -> SQLite (hot, <10s)
+//!                                                     |
+//!                                                     v (compaction, 5s)
+//!                                                Parquet files (cold)
+//!                                                     |
+//!                                                     v (merge, hourly)
+//!                                                Merged Parquet
+//!                                                     |
 //! Consumer SQL -> tinyobs.query() -> DuckDB -> UNION ALL (hot + cold) -> Results
 //! ```
 //!
@@ -27,7 +27,7 @@
 //!     let tinyobs = TinyObs::start(Config::default()).await?;
 //!
 //!     let app = axum::Router::new()
-//!         .merge(tinyobs.ingest_router())  // POST /v1/traces
+//!         .merge(tinyobs.ingest_router())  // POST /v1/{traces,logs,metrics}
 //!         .route("/api/traces", get(list_traces))
 //!         .with_state(tinyobs.clone());
 //!
@@ -48,7 +48,9 @@ pub mod startup;
 pub mod telemetry;
 
 pub use config::{ApplicationSettings, Config, Environment};
-pub use schema::{Span, SpanRow, SpanStatus};
+pub use schema::{
+    LogRecord, LogRow, Metric, MetricKind, MetricRow, SeverityLevel, Span, SpanRow, SpanStatus,
+};
 
 use anyhow::Result;
 use axum::{routing::get, routing::post, Router};
@@ -61,7 +63,7 @@ use tokio::task::JoinHandle;
 
 use crate::compaction::CompactionManager;
 use crate::db::{ReadDb, WriteDb};
-use crate::ingest::{health_check, receive_traces, IngestState};
+use crate::ingest::{health_check, receive_logs, receive_metrics, receive_traces, IngestState};
 
 /// TinyObs - Main entry point
 ///
@@ -142,10 +144,14 @@ impl TinyObs {
     ///
     /// Provides:
     /// - `POST /v1/traces` - OTLP HTTP trace ingestion
+    /// - `POST /v1/logs` - OTLP HTTP logs ingestion
+    /// - `POST /v1/metrics` - OTLP HTTP metrics ingestion
     /// - `GET /health` - Health check
     pub fn ingest_router(&self) -> Router {
         Router::new()
             .route("/v1/traces", post(receive_traces))
+            .route("/v1/logs", post(receive_logs))
+            .route("/v1/metrics", post(receive_metrics))
             .route("/health", get(health_check))
             .with_state(self.ingest_state.clone())
     }

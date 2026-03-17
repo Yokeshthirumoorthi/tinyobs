@@ -137,8 +137,10 @@ async fn main() -> Result<()> {
         .merge(api_router);
 
     tracing::info!("TinyObs listening on port {}", port);
-    tracing::info!("  POST /v1/traces      - OTLP trace ingestion");
-    tracing::info!("  GET  /health         - Health check");
+    tracing::info!("  POST /v1/traces  - OTLP trace ingestion (protobuf & JSON)");
+    tracing::info!("  POST /v1/logs    - OTLP logs ingestion (protobuf & JSON)");
+    tracing::info!("  POST /v1/metrics - OTLP metrics ingestion (protobuf & JSON)");
+    tracing::info!("  GET  /health     - Health check");
     tracing::info!("  GET  /api/traces     - List traces (custom)");
     tracing::info!("  GET  /api/traces/:id - Get trace detail (custom)");
     tracing::info!("  POST /query          - Execute SQL query");

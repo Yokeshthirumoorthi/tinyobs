@@ -67,8 +67,10 @@ impl Application {
             port = self.port,
             "Starting TinyObs server"
         );
-        tracing::info!("  POST /v1/traces - OTLP trace ingestion");
-        tracing::info!("  GET  /health    - Health check");
+        tracing::info!("  POST /v1/traces  - OTLP trace ingestion (protobuf & JSON)");
+        tracing::info!("  POST /v1/logs    - OTLP logs ingestion (protobuf & JSON)");
+        tracing::info!("  POST /v1/metrics - OTLP metrics ingestion (protobuf & JSON)");
+        tracing::info!("  GET  /health     - Health check");
 
         axum::serve(self.listener, app).await?;
 
