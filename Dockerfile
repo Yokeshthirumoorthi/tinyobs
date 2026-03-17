@@ -20,6 +20,7 @@ RUN cargo build --release --example standalone && \
 COPY src ./src
 COPY examples ./examples
 COPY migrations ./migrations
+COPY configuration ./configuration
 
 # Build the actual binary
 RUN touch src/lib.rs examples/standalone.rs && \
@@ -40,6 +41,9 @@ COPY --from=builder /app/target/release/examples/standalone /app/tinyobs
 # Copy migrations
 COPY migrations ./migrations
 
+# Copy configuration
+COPY configuration ./configuration
+
 # Create data directory
 RUN mkdir -p /app/data
 
@@ -48,5 +52,6 @@ EXPOSE 4319
 
 # Set environment variables
 ENV RUST_LOG=info
+ENV TINYOBS_ENV=production
 
 CMD ["/app/tinyobs"]

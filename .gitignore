@@ -21,3 +21,6 @@ Thumbs.db
 
 # Debug
 *.log
+
+# TinyObs data (SQLite + Parquet)
+/data/

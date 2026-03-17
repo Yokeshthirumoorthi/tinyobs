@@ -1,0 +1,20 @@
+# TinyObs Base Configuration
+# This file contains shared settings used across all environments.
+# Environment-specific overrides go in local.toml or production.toml.
+
+[application]
+host = "0.0.0.0"
+port = 4319
+
+[storage]
+data_dir = "./data"
+retention_hours = 168  # 7 days
+
+[compaction]
+interval_secs = 5
+hot_window_secs = 10
+merge_interval_secs = 3600  # 1 hour
+merge_min_size_bytes = 1048576  # 1MB
+
+[ingest]
+session_attribute = "session.id"

@@ -44,8 +44,10 @@ pub mod config;
 pub mod db;
 pub mod ingest;
 pub mod schema;
+pub mod startup;
+pub mod telemetry;
 
-pub use config::Config;
+pub use config::{ApplicationSettings, Config, Environment};
 pub use schema::{Span, SpanRow, SpanStatus};
 
 use anyhow::Result;

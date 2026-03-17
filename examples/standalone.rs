@@ -1,15 +1,18 @@
 //! Standalone TinyObs example
 //!
-//! Demonstrates running TinyObs as a standalone trace collector.
+//! Demonstrates running TinyObs as a standalone trace collector with Z2P-style
+//! telemetry (JSON logs for production, pretty logs for development).
 //!
 //! Run with: `cargo run -p tinyobs --example standalone`
+//!
+//! Environment variables:
+//! - `TINYOBS_ENV`: Set to "production" for JSON logs, "local" for pretty logs (default: local)
+//! - `RUST_LOG`: Override log level filtering
 
 use anyhow::Result;
 use axum::{extract::State, response::Json, routing::get, Router};
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
-use tinyobs::{Config, TinyObs};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tinyobs::{startup::Application, telemetry, Config, TinyObs};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TraceSummary {
@@ -71,19 +74,26 @@ async fn get_trace(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::EnvFilter::new("info,tinyobs=debug"))
-        .init();
+    // Initialize telemetry based on environment
+    let env = std::env::var("TINYOBS_ENV").unwrap_or_else(|_| "local".into());
+    if env == "production" || env == "prod" {
+        let subscriber = telemetry::get_subscriber("tinyobs", "info", std::io::stdout);
+        telemetry::init_subscriber(subscriber);
+    } else {
+        let subscriber = telemetry::get_subscriber_pretty("tinyobs", "info,tinyobs=debug");
+        telemetry::init_subscriber(subscriber);
+    }
 
-    // Load or create config
-    let config = Config::default();
+    // Load configuration from files or use defaults
+    let config = Config::get_configuration().unwrap_or_else(|e| {
+        tracing::warn!("Failed to load configuration: {}, using defaults", e);
+        Config::default()
+    });
     tracing::info!("Starting with config: {:?}", config);
 
-    // Start TinyObs
-    let handle = TinyObs::start(config).await?;
-    let tinyobs = handle.clone_tinyobs();
+    // Build application using the startup module
+    let app = Application::build(config).await?;
+    let tinyobs = app.tinyobs();
 
     // Build custom API router with TinyObs state
     let api_router = Router::new()
@@ -91,24 +101,23 @@ async fn main() -> Result<()> {
         .route("/api/traces/{trace_id}", get(get_trace))
         .with_state(tinyobs.clone());
 
-    // Build application: merge ingest router (has its own state) with custom API
-    let app = Router::new()
+    // For this example, we run the server manually to add custom routes
+    // In simpler cases, you could just use app.run_until_stopped()
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", app.port())).await?;
+
+    let full_app = Router::new()
         .merge(tinyobs.ingest_router())
         .merge(api_router);
 
-    // Start server
-    let addr = SocketAddr::from(([0, 0, 0, 0], 4319));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    tracing::info!("TinyObs listening on {}", addr);
-    tracing::info!("  POST /v1/traces     - OTLP trace ingestion");
-    tracing::info!("  GET  /health        - Health check");
-    tracing::info!("  GET  /api/traces    - List traces (custom)");
+    tracing::info!("TinyObs listening on port {}", app.port());
+    tracing::info!("  POST /v1/traces      - OTLP trace ingestion");
+    tracing::info!("  GET  /health         - Health check");
+    tracing::info!("  GET  /api/traces     - List traces (custom)");
     tracing::info!("  GET  /api/traces/:id - Get trace detail (custom)");
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, full_app).await?;
 
     // Graceful shutdown
-    handle.shutdown().await?;
-
+    app.handle().clone_tinyobs();
     Ok(())
 }

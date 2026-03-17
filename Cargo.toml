@@ -37,9 +37,15 @@ tracing = "0.1"
 anyhow = "1.0"
 thiserror = "2.0"
 
+# Telemetry
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-bunyan-formatter = "0.3"
+
+# Configuration
+config = "0.14"
+
 [dev-dependencies]
 tokio-test = "0.4"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"
 
 [[example]]
