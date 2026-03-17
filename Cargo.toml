@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Minimal observability storage: OTLP ingest + SQLite/Parquet + DuckDB query"
 license = "MIT"
+repository = "https://github.com/Yokeshthirumoorthi/tinyobs"
 
 [lib]
 path = "src/lib.rs"
