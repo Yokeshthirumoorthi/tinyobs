@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.83-bookworm AS builder
+FROM rust:1.85-bookworm AS builder
 
 WORKDIR /app
 
@@ -9,22 +9,25 @@ COPY Cargo.toml Cargo.lock ./
 # Create dummy source to cache dependencies
 RUN mkdir src && \
     echo "pub fn main() {}" > src/lib.rs && \
-    mkdir examples && \
-    echo "fn main() {}" > examples/standalone.rs
+    mkdir -p src/bin && \
+    echo "fn main() {}" > src/bin/server.rs
+
+# Pin crates to versions compatible with current rustc
+RUN cargo update time --precise 0.3.36 && \
+    cargo update comfy-table --precise 7.1.1
 
 # Build dependencies only
-RUN cargo build --release --example standalone && \
-    rm -rf src examples
+RUN cargo build --release --bin tinyobs-server && \
+    rm -rf src
 
 # Copy actual source code
 COPY src ./src
-COPY examples ./examples
 COPY migrations ./migrations
 COPY configuration ./configuration
 
 # Build the actual binary
-RUN touch src/lib.rs examples/standalone.rs && \
-    cargo build --release --example standalone
+RUN touch src/lib.rs src/bin/server.rs && \
+    cargo build --release --bin tinyobs-server
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -36,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy the binary
-COPY --from=builder /app/target/release/examples/standalone /app/tinyobs
+COPY --from=builder /app/target/release/tinyobs-server /app/tinyobs
 
 # Copy migrations
 COPY migrations ./migrations
@@ -48,7 +51,7 @@ COPY configuration ./configuration
 RUN mkdir -p /app/data
 
 # Expose the default port
-EXPOSE 4319
+EXPOSE 4318
 
 # Set environment variables
 ENV RUST_LOG=info

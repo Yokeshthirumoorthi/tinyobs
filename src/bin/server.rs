@@ -1,16 +1,17 @@
-//! Standalone TinyObs example
+//! TinyObs HTTP Server Binary
 //!
-//! Demonstrates running TinyObs as a standalone trace collector with Z2P-style
+//! Runs TinyObs as a standalone trace collector with Z2P-style
 //! telemetry (JSON logs for production, pretty logs for development).
 //!
-//! Run with: `cargo run -p tinyobs --example standalone`
+//! Run with: `cargo run --bin tinyobs-server`
 //!
 //! Environment variables:
 //! - `TINYOBS_ENV`: Set to "production" for JSON logs, "local" for pretty logs (default: local)
 //! - `RUST_LOG`: Override log level filtering
 
 use anyhow::Result;
-use axum::{extract::State, response::Json, routing::get, Router};
+use axum::{extract::State, http::StatusCode, response::Json, routing::{get, post}, Router};
+use duckdb::ToSql;
 use serde::{Deserialize, Serialize};
 use tinyobs::{startup::Application, telemetry, Config, TinyObs};
 
@@ -29,6 +30,34 @@ struct SpanDetail {
     operation: String,
     service_name: String,
     duration_ns: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct QueryRequest {
+    sql: String,
+    #[serde(default)]
+    params: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct QueryResponse {
+    data: Vec<serde_json::Value>,
+}
+
+async fn execute_query(
+    State(tinyobs): State<TinyObs>,
+    Json(request): Json<QueryRequest>,
+) -> Result<Json<QueryResponse>, (StatusCode, String)> {
+    // Convert params to references for DuckDB
+    let param_refs: Vec<&dyn ToSql> = request.params.iter()
+        .map(|s| s as &dyn ToSql)
+        .collect();
+
+    let data: Vec<serde_json::Value> = tinyobs
+        .query(&request.sql, &param_refs)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    Ok(Json(QueryResponse { data }))
 }
 
 // Custom handler using tinyobs.query()
@@ -93,31 +122,30 @@ async fn main() -> Result<()> {
 
     // Build application using the startup module
     let app = Application::build(config).await?;
-    let tinyobs = app.tinyobs();
+    let (listener, handle, port) = app.into_parts();
+    let tinyobs = handle.clone_tinyobs();
 
     // Build custom API router with TinyObs state
     let api_router = Router::new()
         .route("/api/traces", get(list_traces))
         .route("/api/traces/{trace_id}", get(get_trace))
+        .route("/query", post(execute_query))
         .with_state(tinyobs.clone());
-
-    // For this example, we run the server manually to add custom routes
-    // In simpler cases, you could just use app.run_until_stopped()
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", app.port())).await?;
 
     let full_app = Router::new()
         .merge(tinyobs.ingest_router())
         .merge(api_router);
 
-    tracing::info!("TinyObs listening on port {}", app.port());
+    tracing::info!("TinyObs listening on port {}", port);
     tracing::info!("  POST /v1/traces      - OTLP trace ingestion");
     tracing::info!("  GET  /health         - Health check");
     tracing::info!("  GET  /api/traces     - List traces (custom)");
     tracing::info!("  GET  /api/traces/:id - Get trace detail (custom)");
+    tracing::info!("  POST /query          - Execute SQL query");
 
     axum::serve(listener, full_app).await?;
 
     // Graceful shutdown
-    app.handle().clone_tinyobs();
+    handle.shutdown().await?;
     Ok(())
 }

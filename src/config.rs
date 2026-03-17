@@ -59,7 +59,7 @@ fn default_host() -> String {
 }
 
 fn default_port() -> u16 {
-    4319
+    4318
 }
 
 /// Storage configuration
@@ -251,7 +251,7 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
         assert_eq!(config.application.host, "0.0.0.0");
-        assert_eq!(config.application.port, 4319);
+        assert_eq!(config.application.port, 4318);
         assert_eq!(config.storage.data_dir, "./data");
         assert_eq!(config.storage.retention_hours, 168);
         assert_eq!(config.compaction.interval_secs, 5);
@@ -268,7 +268,7 @@ data_dir = "/var/tinyobs"
         let config = Config::from_str(toml).unwrap();
         assert_eq!(config.storage.data_dir, "/var/tinyobs");
         // Defaults should apply
-        assert_eq!(config.application.port, 4319);
+        assert_eq!(config.application.port, 4318);
         assert_eq!(config.compaction.interval_secs, 5);
     }
 

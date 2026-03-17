@@ -8,6 +8,10 @@ license = "MIT"
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "tinyobs-server"
+path = "src/bin/server.rs"
+
 [dependencies]
 # Web framework
 axum = "0.8"
@@ -47,7 +51,3 @@ config = "0.14"
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"
-
-[[example]]
-name = "standalone"
-path = "examples/standalone.rs"

@@ -51,6 +51,11 @@ impl Application {
         self.handle.clone_tinyobs()
     }
 
+    /// Consume the application and return its parts for custom server setup
+    pub fn into_parts(self) -> (TcpListener, TinyObsHandle, u16) {
+        (self.listener, self.handle, self.port)
+    }
+
     /// Run the application until stopped
     ///
     /// This starts the HTTP server and blocks until shutdown is requested.

@@ -2,4 +2,4 @@
 # Overrides for local development
 
 [application]
-port = 4319
+port = 4318
