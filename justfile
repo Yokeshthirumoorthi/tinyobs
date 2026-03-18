@@ -26,7 +26,6 @@ run-pro:
   docker build -f crates/tinyobs-pro/docker/Dockerfile -t tinyobs-pro .
   docker run -d --rm \
     -p 4318:4318 \
-    -p 8080:8080 \
     -v tinyobs-pro-data:/var/lib/clickhouse \
     --name tinyobs-pro \
     tinyobs-pro

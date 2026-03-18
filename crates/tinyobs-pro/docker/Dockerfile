@@ -49,7 +49,7 @@ COPY crates/tinyobs-pro/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # OTLP ingest + Query API
-EXPOSE 4318 8080
+EXPOSE 4318
 
 # ClickHouse data persistence
 VOLUME /var/lib/clickhouse

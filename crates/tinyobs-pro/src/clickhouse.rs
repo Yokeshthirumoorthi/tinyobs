@@ -40,6 +40,17 @@ impl ClickHouseBackend {
         Ok(resp.is_ok())
     }
 
+    /// Execute a query and deserialize each row into `T`.
+    ///
+    /// The underlying ClickHouse HTTP call uses `JSONEachRow` format,
+    /// so `T` must match the column names/types returned by the SQL.
+    pub async fn query<T: serde::de::DeserializeOwned>(&self, sql: &str) -> Result<Vec<T>> {
+        let rows = self.query_json(sql).await?;
+        rows.into_iter()
+            .map(|v| serde_json::from_value(v).context("Failed to deserialize row"))
+            .collect()
+    }
+
     /// Execute a query and return JSON rows
     async fn query_json(&self, sql: &str) -> Result<Vec<serde_json::Value>> {
         let full_sql = format!("{} FORMAT JSONEachRow", sql);

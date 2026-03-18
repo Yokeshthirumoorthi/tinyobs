@@ -18,12 +18,9 @@ pub struct ProConfig {
 pub struct ApplicationSettings {
     #[serde(default = "default_host")]
     pub host: String,
-    /// OTLP ingest port
-    #[serde(default = "default_ingest_port")]
-    pub ingest_port: u16,
-    /// Query API port
-    #[serde(default = "default_api_port")]
-    pub api_port: u16,
+    /// Server port (ingest + query API)
+    #[serde(default = "default_port")]
+    pub port: u16,
 }
 
 /// ClickHouse connection settings
@@ -53,11 +50,8 @@ pub struct IngestConfig {
 fn default_host() -> String {
     "0.0.0.0".to_string()
 }
-fn default_ingest_port() -> u16 {
+fn default_port() -> u16 {
     4318
-}
-fn default_api_port() -> u16 {
-    8080
 }
 fn default_clickhouse_url() -> String {
     "http://127.0.0.1:8123".to_string()
@@ -79,8 +73,7 @@ impl Default for ApplicationSettings {
     fn default() -> Self {
         Self {
             host: default_host(),
-            ingest_port: default_ingest_port(),
-            api_port: default_api_port(),
+            port: default_port(),
         }
     }
 }

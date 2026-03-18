@@ -1,6 +1,6 @@
 //! TinyObs Pro Server Binary
 //!
-//! Single axum binary handling OTLP ingest (:4318) and query API (:8080),
+//! Single axum binary serving OTLP ingest and query API on one port,
 //! backed by ClickHouse.
 
 use anyhow::Result;
@@ -241,7 +241,7 @@ async fn main() -> Result<()> {
         config: Arc::new(config.ingest.clone()),
     };
 
-    // Ingest router (:4318)
+    // Ingest routes
     let ingest_router = Router::new()
         .route("/v1/traces", post(receive_traces))
         .route("/v1/logs", post(receive_logs))
@@ -249,7 +249,7 @@ async fn main() -> Result<()> {
         .route("/health", get(health_check))
         .with_state(ingest_state);
 
-    // Query API router (:8080)
+    // Query API routes
     let api_router = Router::new()
         .route("/api/traces", get(api_list_traces))
         .route("/api/traces/{trace_id}", get(api_get_trace))
@@ -260,40 +260,15 @@ async fn main() -> Result<()> {
         .route("/api/query", post(api_raw_query))
         .with_state(backend);
 
-    // Bind listeners
-    let ingest_addr = SocketAddr::from(([0, 0, 0, 0], config.application.ingest_port));
-    let api_addr = SocketAddr::from(([0, 0, 0, 0], config.application.api_port));
+    // Merge into a single router
+    let app = ingest_router.merge(api_router);
 
-    let ingest_listener = TcpListener::bind(ingest_addr).await?;
-    let api_listener = TcpListener::bind(api_addr).await?;
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.application.port));
+    let listener = TcpListener::bind(addr).await?;
 
-    tracing::info!("tinyobs-pro listening:");
-    tracing::info!("  OTLP ingest on :{}", config.application.ingest_port);
-    tracing::info!("    POST /v1/traces");
-    tracing::info!("    POST /v1/logs");
-    tracing::info!("    POST /v1/metrics");
-    tracing::info!("  Query API on :{}", config.application.api_port);
-    tracing::info!("    GET  /api/traces");
-    tracing::info!("    GET  /api/traces/:id");
-    tracing::info!("    GET  /api/logs");
-    tracing::info!("    GET  /api/metrics");
-    tracing::info!("    GET  /api/services");
-    tracing::info!("    GET  /api/health");
-    tracing::info!("    POST /api/query");
+    tracing::info!("tinyobs-pro listening on :{}", config.application.port);
 
-    // Run both servers concurrently
-    tokio::select! {
-        res = axum::serve(ingest_listener, ingest_router) => {
-            if let Err(e) = res {
-                tracing::error!(error = %e, "Ingest server error");
-            }
-        }
-        res = axum::serve(api_listener, api_router) => {
-            if let Err(e) = res {
-                tracing::error!(error = %e, "API server error");
-            }
-        }
-    }
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
