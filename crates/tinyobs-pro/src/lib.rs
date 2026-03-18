@@ -3,9 +3,14 @@
 //! Single binary handling both OTLP ingest (:4318) and query API (:8080),
 //! backed by ClickHouse for high-throughput storage and querying.
 
-pub mod clickhouse;
-pub mod config;
-pub mod ingest;
+pub(crate) mod clickhouse;
+pub(crate) mod config;
+pub(crate) mod ingest;
+
+// Re-export backend and config types
+pub use clickhouse::TinyObsDB;
+pub use config::{BackendConfig, IngestConfig, ProConfig};
+pub use ingest::{health_check, receive_logs, receive_metrics, receive_traces, IngestState};
 
 // Re-export core types
 pub use tinyobs_core::schema;

@@ -1,4 +1,4 @@
-//! OTLP ingest handlers for tinyobs-pro (ClickHouse backend)
+//! OTLP ingest handlers for tinyobs-pro
 
 use axum::{
     body::Bytes,
@@ -8,7 +8,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::clickhouse::ClickHouseBackend;
+use crate::clickhouse::TinyObsDB;
 use crate::config::IngestConfig;
 use tinyobs_core::backend::IngestBackend;
 use tinyobs_core::ingest as core_ingest;
@@ -16,7 +16,7 @@ use tinyobs_core::ingest as core_ingest;
 /// Shared state for the ingest handler
 #[derive(Clone)]
 pub struct IngestState {
-    pub backend: ClickHouseBackend,
+    pub backend: TinyObsDB,
     pub config: Arc<IngestConfig>,
 }
 

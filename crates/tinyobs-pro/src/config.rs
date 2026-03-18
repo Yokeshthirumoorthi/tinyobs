@@ -8,7 +8,7 @@ pub struct ProConfig {
     #[serde(default)]
     pub application: ApplicationSettings,
     #[serde(default)]
-    pub clickhouse: ClickHouseConfig,
+    pub backend: BackendConfig,
     #[serde(default)]
     pub ingest: IngestConfig,
 }
@@ -23,10 +23,10 @@ pub struct ApplicationSettings {
     pub port: u16,
 }
 
-/// ClickHouse connection settings
+/// Backend connection settings
 #[derive(Debug, Clone, Deserialize)]
-pub struct ClickHouseConfig {
-    /// ClickHouse HTTP URL
+pub struct BackendConfig {
+    /// Backend HTTP URL
     #[serde(default = "default_clickhouse_url")]
     pub url: String,
     /// Database name
@@ -78,7 +78,7 @@ impl Default for ApplicationSettings {
     }
 }
 
-impl Default for ClickHouseConfig {
+impl Default for BackendConfig {
     fn default() -> Self {
         Self {
             url: default_clickhouse_url(),
@@ -101,7 +101,7 @@ impl Default for ProConfig {
     fn default() -> Self {
         Self {
             application: ApplicationSettings::default(),
-            clickhouse: ClickHouseConfig::default(),
+            backend: BackendConfig::default(),
             ingest: IngestConfig::default(),
         }
     }

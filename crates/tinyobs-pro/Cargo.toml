@@ -23,7 +23,9 @@ tower-http = { workspace = true }
 # Async runtime
 tokio = { workspace = true }
 
-# ClickHouse HTTP client
+# ClickHouse client (typed inserts with LZ4 compression)
+clickhouse = { version = "0.14", features = ["lz4"] }
+# HTTP client (for JSON queries)
 reqwest = { version = "0.12", features = ["json"] }
 
 # OpenTelemetry (for handler types)

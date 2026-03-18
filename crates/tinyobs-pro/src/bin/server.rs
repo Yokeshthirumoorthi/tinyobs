@@ -20,10 +20,9 @@ use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_subscriber::{fmt::MakeWriter, layer::SubscriberExt, EnvFilter, Registry};
 
 use tinyobs_core::backend::*;
-use tinyobs_pro::clickhouse::ClickHouseBackend;
-use tinyobs_pro::config::ProConfig;
-use tinyobs_pro::ingest::{
-    health_check, receive_logs, receive_metrics, receive_traces, IngestState,
+use tinyobs_pro::{
+    health_check, receive_logs, receive_metrics, receive_traces, TinyObsDB, IngestState,
+    ProConfig,
 };
 
 // ============================================================================
@@ -66,7 +65,7 @@ fn default_limit() -> usize {
 #[derive(Debug, Serialize)]
 struct HealthResponse {
     status: String,
-    clickhouse: bool,
+    backend: bool,
 }
 
 // ============================================================================
@@ -74,17 +73,17 @@ struct HealthResponse {
 // ============================================================================
 
 async fn api_health(
-    State(backend): State<ClickHouseBackend>,
+    State(backend): State<TinyObsDB>,
 ) -> Json<HealthResponse> {
     let ch_ok = backend.ping().await.unwrap_or(false);
     Json(HealthResponse {
         status: if ch_ok { "ok".to_string() } else { "degraded".to_string() },
-        clickhouse: ch_ok,
+        backend: ch_ok,
     })
 }
 
 async fn api_list_traces(
-    State(backend): State<ClickHouseBackend>,
+    State(backend): State<TinyObsDB>,
     Query(q): Query<TraceQuery>,
 ) -> Result<Json<Vec<tinyobs_core::Span>>, (StatusCode, String)> {
     let filter = SpanFilter {
@@ -100,7 +99,7 @@ async fn api_list_traces(
 }
 
 async fn api_get_trace(
-    State(backend): State<ClickHouseBackend>,
+    State(backend): State<TinyObsDB>,
     Path(trace_id): Path<String>,
 ) -> Result<Json<Vec<tinyobs_core::Span>>, (StatusCode, String)> {
     let spans = backend
@@ -111,7 +110,7 @@ async fn api_get_trace(
 }
 
 async fn api_list_logs(
-    State(backend): State<ClickHouseBackend>,
+    State(backend): State<TinyObsDB>,
     Query(q): Query<LogQuery>,
 ) -> Result<Json<Vec<tinyobs_core::LogRecord>>, (StatusCode, String)> {
     let filter = LogFilter {
@@ -130,7 +129,7 @@ async fn api_list_logs(
 }
 
 async fn api_list_metrics(
-    State(backend): State<ClickHouseBackend>,
+    State(backend): State<TinyObsDB>,
     Query(q): Query<MetricQuery>,
 ) -> Result<Json<Vec<tinyobs_core::Metric>>, (StatusCode, String)> {
     let filter = MetricFilter {
@@ -147,7 +146,7 @@ async fn api_list_metrics(
 }
 
 async fn api_list_services(
-    State(backend): State<ClickHouseBackend>,
+    State(backend): State<TinyObsDB>,
 ) -> Result<Json<Vec<ServiceSummary>>, (StatusCode, String)> {
     let time_range = TimeRange::last_day();
     let services = backend
@@ -158,7 +157,7 @@ async fn api_list_services(
 }
 
 async fn api_raw_query(
-    State(backend): State<ClickHouseBackend>,
+    State(backend): State<TinyObsDB>,
     Json(request): Json<RawQueryRequest>,
 ) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, String)> {
     let rows = backend
@@ -218,7 +217,7 @@ async fn main() -> Result<()> {
     tracing::info!("Starting with config: {:?}", config);
 
     // Create ClickHouse backend
-    let backend = ClickHouseBackend::new(config.clickhouse.clone());
+    let backend = TinyObsDB::new(config.backend.clone());
 
     // Wait for ClickHouse to be ready
     tracing::info!("Waiting for ClickHouse...");

@@ -1,29 +1,172 @@
-//! ClickHouse backend implementing TelemetryBackend + IngestBackend
+//! Storage backend implementing TelemetryBackend + IngestBackend
 //!
-//! Uses ClickHouse's HTTP API with JSONEachRow format for queries
-//! and VALUES syntax for inserts.
+//! Uses the `clickhouse` crate for typed inserts (with LZ4 compression)
+//! and `reqwest` for JSON-format queries.
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use reqwest::Client;
+use reqwest::Client as HttpClient;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use tinyobs_core::backend::*;
 use tinyobs_core::schema::{LogRecord, Metric, MetricKind, Span, SpanStatus, SeverityLevel};
 
-use crate::config::ClickHouseConfig;
+use crate::config::BackendConfig;
 
-/// ClickHouse-backed telemetry storage
-#[derive(Clone)]
-pub struct ClickHouseBackend {
-    http: Client,
-    config: Arc<ClickHouseConfig>,
+// ============================================================================
+// ClickHouse Row types for typed inserts
+// ============================================================================
+
+#[derive(Debug, clickhouse::Row, serde::Serialize)]
+struct ChSpanRow {
+    #[serde(rename = "TraceId")]
+    trace_id: String,
+    #[serde(rename = "SpanId")]
+    span_id: String,
+    #[serde(rename = "ParentSpanId")]
+    parent_span_id: String,
+    #[serde(rename = "ServiceName")]
+    service_name: String,
+    #[serde(rename = "SpanName")]
+    span_name: String,
+    #[serde(rename = "Timestamp")]
+    timestamp: i64,
+    #[serde(rename = "Duration")]
+    duration: i64,
+    #[serde(rename = "StatusCode")]
+    status_code: i32,
+    #[serde(rename = "SpanAttributes")]
+    span_attributes: HashMap<String, String>,
+    #[serde(rename = "ResourceAttributes")]
+    resource_attributes: HashMap<String, String>,
 }
 
-impl ClickHouseBackend {
-    pub fn new(config: ClickHouseConfig) -> Self {
-        let http = Client::new();
+impl From<&Span> for ChSpanRow {
+    fn from(s: &Span) -> Self {
         Self {
+            trace_id: s.trace_id.clone(),
+            span_id: s.span_id.clone(),
+            parent_span_id: s.parent_span_id.clone().unwrap_or_default(),
+            service_name: s.service_name.clone(),
+            span_name: s.operation.clone(),
+            timestamp: s.start_time,
+            duration: s.duration_ns,
+            status_code: i32::from(s.status),
+            span_attributes: s.attributes.iter().cloned().collect(),
+            resource_attributes: s.resource_attrs.iter().cloned().collect(),
+        }
+    }
+}
+
+#[derive(Debug, clickhouse::Row, serde::Serialize)]
+struct ChLogRow {
+    #[serde(rename = "Timestamp")]
+    timestamp: i64,
+    #[serde(rename = "ObservedTimestamp")]
+    observed_timestamp: i64,
+    #[serde(rename = "TraceId")]
+    trace_id: String,
+    #[serde(rename = "SpanId")]
+    span_id: String,
+    #[serde(rename = "SeverityNumber")]
+    severity_number: i32,
+    #[serde(rename = "SeverityText")]
+    severity_text: String,
+    #[serde(rename = "Body")]
+    body: String,
+    #[serde(rename = "ServiceName")]
+    service_name: String,
+    #[serde(rename = "LogAttributes")]
+    log_attributes: HashMap<String, String>,
+    #[serde(rename = "ResourceAttributes")]
+    resource_attributes: HashMap<String, String>,
+}
+
+impl From<&LogRecord> for ChLogRow {
+    fn from(l: &LogRecord) -> Self {
+        Self {
+            timestamp: l.timestamp,
+            observed_timestamp: l.observed_timestamp.unwrap_or(0),
+            trace_id: l.trace_id.clone().unwrap_or_default(),
+            span_id: l.span_id.clone().unwrap_or_default(),
+            severity_number: l.severity_number as i32,
+            severity_text: l.severity_text.clone().unwrap_or_default(),
+            body: l.body.clone(),
+            service_name: l.service_name.clone(),
+            log_attributes: l.attributes.iter().cloned().collect(),
+            resource_attributes: l.resource_attrs.iter().cloned().collect(),
+        }
+    }
+}
+
+#[derive(Debug, clickhouse::Row, serde::Serialize)]
+struct ChMetricRow {
+    #[serde(rename = "MetricName")]
+    metric_name: String,
+    #[serde(rename = "Description")]
+    description: String,
+    #[serde(rename = "Unit")]
+    unit: String,
+    #[serde(rename = "Timestamp")]
+    timestamp: i64,
+    #[serde(rename = "ServiceName")]
+    service_name: String,
+    #[serde(rename = "Value")]
+    value: f64,
+    #[serde(rename = "Sum")]
+    sum: f64,
+    #[serde(rename = "Count")]
+    count: u64,
+    #[serde(rename = "Min")]
+    min: f64,
+    #[serde(rename = "Max")]
+    max: f64,
+    #[serde(rename = "Attributes")]
+    attributes: HashMap<String, String>,
+    #[serde(rename = "ResourceAttributes")]
+    resource_attributes: HashMap<String, String>,
+}
+
+impl From<&Metric> for ChMetricRow {
+    fn from(m: &Metric) -> Self {
+        Self {
+            metric_name: m.name.clone(),
+            description: m.description.clone().unwrap_or_default(),
+            unit: m.unit.clone().unwrap_or_default(),
+            timestamp: m.timestamp,
+            service_name: m.service_name.clone(),
+            value: m.value.unwrap_or(0.0),
+            sum: m.sum.unwrap_or(0.0),
+            count: m.count.unwrap_or(0),
+            min: m.min.unwrap_or(0.0),
+            max: m.max.unwrap_or(0.0),
+            attributes: m.attributes.iter().cloned().collect(),
+            resource_attributes: m.resource_attrs.iter().cloned().collect(),
+        }
+    }
+}
+
+// ============================================================================
+// TinyObsDB
+// ============================================================================
+
+/// Product-branded telemetry storage backend
+#[derive(Clone)]
+pub struct TinyObsDB {
+    client: clickhouse::Client,
+    http: HttpClient,
+    config: Arc<BackendConfig>,
+}
+
+impl TinyObsDB {
+    pub fn new(config: BackendConfig) -> Self {
+        let client = clickhouse::Client::default()
+            .with_url(&config.url)
+            .with_database(&config.database);
+        let http = HttpClient::new();
+        Self {
+            client,
             http,
             config: Arc::new(config),
         }
@@ -77,26 +220,6 @@ impl ClickHouseBackend {
             .collect();
 
         Ok(rows)
-    }
-
-    /// Execute a statement (INSERT, DDL, etc.) — no result expected
-    async fn execute(&self, sql: &str) -> Result<()> {
-        let resp = self
-            .http
-            .post(&self.config.url)
-            .query(&[("database", &self.config.database)])
-            .body(sql.to_string())
-            .send()
-            .await
-            .context("ClickHouse HTTP request failed")?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("ClickHouse error ({}): {}", status, body);
-        }
-
-        Ok(())
     }
 
     // ========================================================================
@@ -352,13 +475,13 @@ impl ClickHouseBackend {
     }
 }
 
-/// Escape single quotes for ClickHouse SQL
+/// Escape single quotes for ClickHouse SQL (used in query WHERE clauses)
 fn escape_ch(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
 #[async_trait]
-impl TelemetryBackend for ClickHouseBackend {
+impl TelemetryBackend for TinyObsDB {
     async fn query_spans(&self, filter: SpanFilter) -> Result<Vec<Span>> {
         let where_clause = Self::build_span_where_clause(&filter);
         let order = filter
@@ -768,7 +891,7 @@ impl TelemetryBackend for ClickHouseBackend {
 }
 
 #[async_trait]
-impl IngestBackend for ClickHouseBackend {
+impl IngestBackend for TinyObsDB {
     async fn ingest_span(&self, span: Span) -> Result<()> {
         self.ingest_spans(vec![span]).await
     }
@@ -778,37 +901,11 @@ impl IngestBackend for ClickHouseBackend {
             return Ok(());
         }
 
-        let mut sql = String::from(
-            "INSERT INTO otel_traces (TraceId, SpanId, ParentSpanId, ServiceName, SpanName, \
-             Timestamp, Duration, StatusCode, SpanAttributes, ResourceAttributes) VALUES ",
-        );
-
-        let values: Vec<String> = spans
-            .iter()
-            .map(|s| {
-                let attrs = map_to_ch_map(&s.attributes);
-                let resource = map_to_ch_map(&s.resource_attrs);
-                format!(
-                    "('{}', '{}', '{}', '{}', '{}', {}, {}, {}, {}, {})",
-                    escape_ch(&s.trace_id),
-                    escape_ch(&s.span_id),
-                    s.parent_span_id
-                        .as_deref()
-                        .map(escape_ch)
-                        .unwrap_or_default(),
-                    escape_ch(&s.service_name),
-                    escape_ch(&s.operation),
-                    s.start_time,
-                    s.duration_ns,
-                    i32::from(s.status),
-                    attrs,
-                    resource,
-                )
-            })
-            .collect();
-
-        sql.push_str(&values.join(", "));
-        self.execute(&sql).await?;
+        let mut insert = self.client.insert::<ChSpanRow>("otel_traces").await?;
+        for span in &spans {
+            insert.write(&ChSpanRow::from(span)).await?;
+        }
+        insert.end().await?;
 
         tracing::debug!(count = spans.len(), "Inserted spans to ClickHouse");
         Ok(())
@@ -823,34 +920,11 @@ impl IngestBackend for ClickHouseBackend {
             return Ok(());
         }
 
-        let mut sql = String::from(
-            "INSERT INTO otel_logs (Timestamp, ObservedTimestamp, TraceId, SpanId, \
-             SeverityNumber, SeverityText, Body, ServiceName, LogAttributes, ResourceAttributes) VALUES ",
-        );
-
-        let values: Vec<String> = logs
-            .iter()
-            .map(|l| {
-                let attrs = map_to_ch_map(&l.attributes);
-                let resource = map_to_ch_map(&l.resource_attrs);
-                format!(
-                    "({}, {}, '{}', '{}', {}, '{}', '{}', '{}', {}, {})",
-                    l.timestamp,
-                    l.observed_timestamp.unwrap_or(0),
-                    l.trace_id.as_deref().map(escape_ch).unwrap_or_default(),
-                    l.span_id.as_deref().map(escape_ch).unwrap_or_default(),
-                    l.severity_number as i32,
-                    l.severity_text.as_deref().map(escape_ch).unwrap_or_default(),
-                    escape_ch(&l.body),
-                    escape_ch(&l.service_name),
-                    attrs,
-                    resource,
-                )
-            })
-            .collect();
-
-        sql.push_str(&values.join(", "));
-        self.execute(&sql).await?;
+        let mut insert = self.client.insert::<ChLogRow>("otel_logs").await?;
+        for log in &logs {
+            insert.write(&ChLogRow::from(log)).await?;
+        }
+        insert.end().await?;
 
         tracing::debug!(count = logs.len(), "Inserted logs to ClickHouse");
         Ok(())
@@ -865,36 +939,11 @@ impl IngestBackend for ClickHouseBackend {
             return Ok(());
         }
 
-        let mut sql = String::from(
-            "INSERT INTO otel_metrics (MetricName, Description, Unit, Timestamp, ServiceName, \
-             Value, Sum, Count, Min, Max, Attributes, ResourceAttributes) VALUES ",
-        );
-
-        let values: Vec<String> = metrics
-            .iter()
-            .map(|m| {
-                let attrs = map_to_ch_map(&m.attributes);
-                let resource = map_to_ch_map(&m.resource_attrs);
-                format!(
-                    "('{}', '{}', '{}', {}, '{}', {}, {}, {}, {}, {}, {}, {})",
-                    escape_ch(&m.name),
-                    m.description.as_deref().map(escape_ch).unwrap_or_default(),
-                    m.unit.as_deref().map(escape_ch).unwrap_or_default(),
-                    m.timestamp,
-                    escape_ch(&m.service_name),
-                    m.value.unwrap_or(0.0),
-                    m.sum.unwrap_or(0.0),
-                    m.count.unwrap_or(0),
-                    m.min.unwrap_or(0.0),
-                    m.max.unwrap_or(0.0),
-                    attrs,
-                    resource,
-                )
-            })
-            .collect();
-
-        sql.push_str(&values.join(", "));
-        self.execute(&sql).await?;
+        let mut insert = self.client.insert::<ChMetricRow>("otel_metrics").await?;
+        for metric in &metrics {
+            insert.write(&ChMetricRow::from(metric)).await?;
+        }
+        insert.end().await?;
 
         tracing::debug!(count = metrics.len(), "Inserted metrics to ClickHouse");
         Ok(())
@@ -902,7 +951,7 @@ impl IngestBackend for ClickHouseBackend {
 }
 
 #[async_trait]
-impl ManagedBackend for ClickHouseBackend {
+impl ManagedBackend for TinyObsDB {
     async fn start_background_tasks(&self) -> Result<()> {
         Ok(())
     }
@@ -914,16 +963,4 @@ impl ManagedBackend for ClickHouseBackend {
     async fn health_check(&self) -> Result<bool> {
         self.ping().await
     }
-}
-
-/// Convert Vec<(String, String)> to ClickHouse map literal
-fn map_to_ch_map(pairs: &[(String, String)]) -> String {
-    if pairs.is_empty() {
-        return "map()".to_string();
-    }
-    let entries: Vec<String> = pairs
-        .iter()
-        .map(|(k, v)| format!("'{}', '{}'", escape_ch(k), escape_ch(v)))
-        .collect();
-    format!("map({})", entries.join(", "))
 }
