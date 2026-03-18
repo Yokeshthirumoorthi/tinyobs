@@ -26,6 +26,23 @@ impl ReadDb {
             "#,
         )?;
 
+        // Register the attr() macro for extracting values from JSON attribute arrays.
+        // Attributes are stored as [["key","val"], ...] so we filter the parsed array
+        // for the pair whose first element matches, then return the second element.
+        conn.execute_batch(
+            r#"
+            CREATE MACRO attr(json_col, key_name) AS (
+                list_extract(
+                    list_filter(
+                        json_col::JSON[]::VARCHAR[][],
+                        x -> x[1] = key_name
+                    ),
+                    1
+                )[2]
+            );
+            "#,
+        )?;
+
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             sqlite_path: sqlite_path.to_string(),
@@ -191,5 +208,45 @@ mod tests {
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].count, 0);
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct AttrRow {
+        val: Option<String>,
+    }
+
+    #[test]
+    fn test_attr_macro() {
+        let dir = tempdir().unwrap();
+        let sqlite_path = dir.path().join("test.db");
+        let parquet_dir = dir.path().join("parquet");
+
+        let conn = rusqlite::Connection::open(&sqlite_path).unwrap();
+        conn.execute_batch(include_str!("../../migrations/01_spans.sql"))
+            .unwrap();
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, service_name, operation, start_time, duration_ns, status, attributes)
+             VALUES ('t1', 's1', 'svc', 'op', 1000, 500, 0, ?)",
+            [r#"[["source","web"],["env","prod"]]"#],
+        ).unwrap();
+        drop(conn);
+
+        let db = ReadDb::new(sqlite_path.to_str().unwrap(), parquet_dir.to_str().unwrap()).unwrap();
+
+        let results: Vec<AttrRow> = db
+            .query("SELECT attr(attributes, 'source') as val FROM spans", &[])
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].val, Some("web".to_string()));
+
+        let results: Vec<AttrRow> = db
+            .query("SELECT attr(attributes, 'env') as val FROM spans", &[])
+            .unwrap();
+        assert_eq!(results[0].val, Some("prod".to_string()));
+
+        let results: Vec<AttrRow> = db
+            .query("SELECT attr(attributes, 'missing') as val FROM spans", &[])
+            .unwrap();
+        assert_eq!(results[0].val, None);
     }
 }

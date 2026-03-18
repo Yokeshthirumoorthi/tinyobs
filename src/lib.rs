@@ -48,13 +48,13 @@ pub mod startup;
 pub mod telemetry;
 
 pub use config::{ApplicationSettings, Config, Environment};
+pub use duckdb::ToSql;
 pub use schema::{
     LogRecord, LogRow, Metric, MetricKind, MetricRow, SeverityLevel, Span, SpanRow, SpanStatus,
 };
 
 use anyhow::Result;
 use axum::{routing::get, routing::post, Router};
-use duckdb::ToSql;
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
 use std::sync::Arc;
