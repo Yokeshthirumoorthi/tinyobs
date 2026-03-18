@@ -8,8 +8,19 @@ pub mod config;
 pub mod ingest;
 
 // Re-export core types
-pub use tinyobs_core::backend;
 pub use tinyobs_core::schema;
 pub use tinyobs_core::{
     LogRecord, LogRow, Metric, MetricKind, MetricRow, SeverityLevel, Span, SpanRow, SpanStatus,
+};
+
+// Re-export backend traits
+pub use tinyobs_core::backend::{
+    BackendType, IngestBackend, ManagedBackend, TelemetryBackend,
+};
+
+// Re-export backend filter/response types
+pub use tinyobs_core::backend::{
+    ColumnMapping, ColumnSchema, Comparison, FieldMapping, LogFilter, MetricAggregation,
+    MetricFilter, MetricType, OrderBy, PeriodMetrics, Schema, ServiceHealth, ServiceSummary,
+    Signal, SpanFilter, SpanStatusFilter, TableSchema, TimeRange,
 };
