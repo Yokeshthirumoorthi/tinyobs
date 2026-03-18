@@ -1,0 +1,56 @@
+[package]
+name = "tinyobs"
+description = "Minimal observability storage: OTLP ingest + SQLite/Parquet + DuckDB query"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "tinyobs-server"
+path = "src/bin/server.rs"
+
+[dependencies]
+tinyobs-core = { workspace = true }
+
+# Web framework
+axum = { workspace = true }
+tower-http = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Databases
+rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite_migration = "1.2"
+duckdb = { version = "1.1", features = ["bundled"] }
+
+# OpenTelemetry (for handler types)
+opentelemetry-proto = { workspace = true }
+prost = { workspace = true }
+hex = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Time & errors
+chrono = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Telemetry
+tracing-subscriber = { workspace = true }
+tracing-bunyan-formatter = { workspace = true }
+
+# Configuration
+config = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3"

@@ -1,0 +1,20 @@
+[package]
+name = "tinyobs-core"
+description = "Shared types and traits for tinyobs observability storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+opentelemetry-proto = { workspace = true }
+prost = { workspace = true }
+hex = { workspace = true }
