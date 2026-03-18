@@ -8,6 +8,8 @@ use async_trait::async_trait;
 use reqwest::Client as HttpClient;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Mutex;
 
 use tinyobs_core::backend::*;
 use tinyobs_core::schema::{LogRecord, Metric, MetricKind, Span, SpanStatus, SeverityLevel};
@@ -157,6 +159,20 @@ pub struct TinyObsDB {
     client: clickhouse::Client,
     http: HttpClient,
     config: Arc<BackendConfig>,
+    spans: Arc<Mutex<clickhouse::inserter::Inserter<ChSpanRow>>>,
+    logs: Arc<Mutex<clickhouse::inserter::Inserter<ChLogRow>>>,
+    metrics: Arc<Mutex<clickhouse::inserter::Inserter<ChMetricRow>>>,
+}
+
+fn make_inserter<T: clickhouse::Row>(
+    client: &clickhouse::Client,
+    table: &str,
+    config: &BackendConfig,
+) -> clickhouse::inserter::Inserter<T> {
+    client
+        .inserter::<T>(table)
+        .with_period(Some(Duration::from_millis(config.flush_interval_ms)))
+        .with_max_rows(config.max_rows)
 }
 
 impl TinyObsDB {
@@ -165,10 +181,16 @@ impl TinyObsDB {
             .with_url(&config.url)
             .with_database(&config.database);
         let http = HttpClient::new();
+        let spans = Arc::new(Mutex::new(make_inserter::<ChSpanRow>(&client, "otel_traces", &config)));
+        let logs = Arc::new(Mutex::new(make_inserter::<ChLogRow>(&client, "otel_logs", &config)));
+        let metrics = Arc::new(Mutex::new(make_inserter::<ChMetricRow>(&client, "otel_metrics", &config)));
         Self {
             client,
             http,
             config: Arc::new(config),
+            spans,
+            logs,
+            metrics,
         }
     }
 
@@ -901,13 +923,14 @@ impl IngestBackend for TinyObsDB {
             return Ok(());
         }
 
-        let mut insert = self.client.insert::<ChSpanRow>("otel_traces").await?;
+        let mut inserter = self.spans.lock().await;
         for span in &spans {
-            insert.write(&ChSpanRow::from(span)).await?;
+            inserter.write(&ChSpanRow::from(span)).await?;
         }
-        insert.end().await?;
-
-        tracing::debug!(count = spans.len(), "Inserted spans to ClickHouse");
+        let quant = inserter.commit().await?;
+        if quant.transactions > 0 {
+            tracing::debug!(rows = quant.rows, "Flushed spans");
+        }
         Ok(())
     }
 
@@ -920,13 +943,14 @@ impl IngestBackend for TinyObsDB {
             return Ok(());
         }
 
-        let mut insert = self.client.insert::<ChLogRow>("otel_logs").await?;
+        let mut inserter = self.logs.lock().await;
         for log in &logs {
-            insert.write(&ChLogRow::from(log)).await?;
+            inserter.write(&ChLogRow::from(log)).await?;
         }
-        insert.end().await?;
-
-        tracing::debug!(count = logs.len(), "Inserted logs to ClickHouse");
+        let quant = inserter.commit().await?;
+        if quant.transactions > 0 {
+            tracing::debug!(rows = quant.rows, "Flushed logs");
+        }
         Ok(())
     }
 
@@ -939,13 +963,14 @@ impl IngestBackend for TinyObsDB {
             return Ok(());
         }
 
-        let mut insert = self.client.insert::<ChMetricRow>("otel_metrics").await?;
+        let mut inserter = self.metrics.lock().await;
         for metric in &metrics {
-            insert.write(&ChMetricRow::from(metric)).await?;
+            inserter.write(&ChMetricRow::from(metric)).await?;
         }
-        insert.end().await?;
-
-        tracing::debug!(count = metrics.len(), "Inserted metrics to ClickHouse");
+        let quant = inserter.commit().await?;
+        if quant.transactions > 0 {
+            tracing::debug!(rows = quant.rows, "Flushed metrics");
+        }
         Ok(())
     }
 }
@@ -957,6 +982,9 @@ impl ManagedBackend for TinyObsDB {
     }
 
     async fn stop_background_tasks(&self) -> Result<()> {
+        self.spans.lock().await.force_commit().await?;
+        self.logs.lock().await.force_commit().await?;
+        self.metrics.lock().await.force_commit().await?;
         Ok(())
     }
 
