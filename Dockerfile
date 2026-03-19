@@ -1,20 +1,16 @@
-# Build stage
+# Build stage — tinyobs lite (embedded chdb)
 FROM rust:1.85-bookworm AS builder
 
 WORKDIR /app
 
-# Copy manifests
+# Copy manifest
 COPY Cargo.toml Cargo.lock ./
 
-# Create dummy source to cache dependencies
-RUN mkdir src && \
+# Create dummy sources to cache dependencies
+RUN mkdir -p src && \
     echo "pub fn main() {}" > src/lib.rs && \
     mkdir -p src/bin && \
-    echo "fn main() {}" > src/bin/server.rs
-
-# Pin crates to versions compatible with current rustc
-RUN cargo update time --precise 0.3.36 && \
-    cargo update comfy-table --precise 7.1.1
+    echo "fn main() {}" > src/bin/tinyobs-server.rs
 
 # Build dependencies only
 RUN cargo build --release --bin tinyobs-server && \
@@ -22,11 +18,9 @@ RUN cargo build --release --bin tinyobs-server && \
 
 # Copy actual source code
 COPY src ./src
-COPY migrations ./migrations
-COPY configuration ./configuration
 
 # Build the actual binary
-RUN touch src/lib.rs src/bin/server.rs && \
+RUN touch src/lib.rs src/bin/tinyobs-server.rs && \
     cargo build --release --bin tinyobs-server
 
 # Runtime stage
@@ -40,9 +34,6 @@ WORKDIR /app
 
 # Copy the binary
 COPY --from=builder /app/target/release/tinyobs-server /app/tinyobs
-
-# Copy migrations
-COPY migrations ./migrations
 
 # Copy configuration
 COPY configuration ./configuration

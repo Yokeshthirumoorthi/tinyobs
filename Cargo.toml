@@ -1,29 +1,40 @@
-[workspace]
-members = [
-    "crates/tinyobs-core",
-    "crates/tinyobs-lite",
-    "crates/tinyobs-pro",
-]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "tinyobs"
+description = "Shared types, traits, transports, and OTLP parsing for tinyobs"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/Yokeshthirumoorthi/tinyobs"
 
-[workspace.dependencies]
-# Shared across crates
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "tinyobs-server"
+path = "src/bin/tinyobs-server.rs"
+required-features = ["lite"]
+
+[[bin]]
+name = "tinyobs-pro-server"
+path = "src/bin/tinyobs-pro-server.rs"
+required-features = ["pro"]
+
+[dependencies]
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
+
+# Async / errors
 anyhow = "1.0"
 thiserror = "2.0"
 tracing = "0.1"
 tokio = { version = "1.41", features = ["full"] }
+async-trait = "0.1"
+
+# Web framework (for ingest types in server.rs)
 axum = "0.8"
 tower-http = { version = "0.6", features = ["cors"] }
-async-trait = "0.1"
 
 # OpenTelemetry
 opentelemetry-proto = { version = "0.6", features = ["gen-tonic", "trace", "logs", "metrics", "with-serde"] }
@@ -38,5 +49,18 @@ tracing-bunyan-formatter = "0.3"
 config = "0.14"
 toml = "0.8"
 
-# Internal crates
-tinyobs-core = { path = "crates/tinyobs-core" }
+# Transport: chdb (optional, for lite)
+chdb-rust = { version = "1.1", optional = true }
+
+# Transport: remote ClickHouse (optional, for pro)
+clickhouse = { version = "0.14", features = ["lz4", "inserter"], optional = true }
+reqwest = { version = "0.12", features = ["json"], optional = true }
+
+[features]
+default = ["lite"]
+lite = ["dep:chdb-rust"]
+pro = ["dep:clickhouse", "dep:reqwest"]
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3"

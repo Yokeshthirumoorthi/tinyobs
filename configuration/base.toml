@@ -10,11 +10,5 @@ port = 4318
 data_dir = "./data"
 retention_hours = 168  # 7 days
 
-[compaction]
-interval_secs = 5
-hot_window_secs = 10
-merge_interval_secs = 3600  # 1 hour
-merge_min_size_bytes = 1048576  # 1MB
-
 [ingest]
 session_attribute = "session.id"

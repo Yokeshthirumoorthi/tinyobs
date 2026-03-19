@@ -22,5 +22,5 @@ Thumbs.db
 # Debug
 *.log
 
-# TinyObs data (SQLite + Parquet)
+# TinyObs data (chdb embedded ClickHouse)
 /data/

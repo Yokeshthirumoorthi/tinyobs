@@ -1,5 +1,0 @@
-# TinyObs Local/Development Configuration
-# Overrides for local development
-
-[application]
-port = 4318

@@ -21,34 +21,28 @@ pub struct TimeRange {
 }
 
 impl TimeRange {
-    /// Create a new time range
     pub fn new(start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
         Self { start, end }
     }
 
-    /// Last N hours from now
     pub fn last_hours(hours: i64) -> Self {
         let end = Utc::now();
         let start = end - Duration::hours(hours);
         Self { start, end }
     }
 
-    /// Last hour from now
     pub fn last_hour() -> Self {
         Self::last_hours(1)
     }
 
-    /// Last 24 hours from now
     pub fn last_day() -> Self {
         Self::last_hours(24)
     }
 
-    /// Last 7 days from now
     pub fn last_week() -> Self {
         Self::last_hours(24 * 7)
     }
 
-    /// Duration in seconds
     pub fn duration_secs(&self) -> i64 {
         (self.end - self.start).num_seconds()
     }
@@ -61,54 +55,49 @@ impl Default for TimeRange {
 }
 
 /// Filter for span queries
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpanFilter {
-    /// Filter by time range
     #[serde(default)]
     pub time_range: TimeRange,
-
-    /// Filter by service name (exact match)
     pub service: Option<String>,
-
-    /// Filter by operation name (exact match or prefix)
     pub operation: Option<String>,
-
-    /// Filter by trace ID
     pub trace_id: Option<String>,
-
-    /// Filter by session ID
     pub session_id: Option<String>,
-
-    /// Filter by parent span ID (None = root spans only)
     pub parent_span_id: Option<Option<String>>,
-
-    /// Filter by status
     pub status: Option<SpanStatusFilter>,
-
-    /// Filter by attributes (key-value exact match)
     #[serde(default)]
     pub attributes: HashMap<String, String>,
-
-    /// Minimum duration in nanoseconds
     pub min_duration_ns: Option<i64>,
-
-    /// Maximum duration in nanoseconds
     pub max_duration_ns: Option<i64>,
-
-    /// Maximum number of results (default: 100)
     #[serde(default = "default_limit")]
     pub limit: usize,
-
-    /// Offset for pagination
     #[serde(default)]
     pub offset: usize,
-
-    /// Order by field (default: start_time DESC)
     pub order_by: Option<OrderBy>,
 }
 
 fn default_limit() -> usize {
     100
+}
+
+impl Default for SpanFilter {
+    fn default() -> Self {
+        Self {
+            time_range: TimeRange::default(),
+            service: None,
+            operation: None,
+            trace_id: None,
+            session_id: None,
+            parent_span_id: None,
+            status: None,
+            attributes: HashMap::new(),
+            min_duration_ns: None,
+            max_duration_ns: None,
+            limit: default_limit(),
+            offset: 0,
+            order_by: None,
+        }
+    }
 }
 
 /// Status filter for spans
@@ -137,72 +126,70 @@ impl Default for OrderBy {
 }
 
 /// Filter for log queries
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogFilter {
-    /// Filter by time range
     #[serde(default)]
     pub time_range: TimeRange,
-
-    /// Filter by service name
     pub service: Option<String>,
-
-    /// Filter by severity level (e.g., "ERROR", "WARN", "INFO", "DEBUG")
     pub severity: Option<String>,
-
-    /// Filter by minimum severity number (1-24, OpenTelemetry spec)
     pub min_severity_number: Option<i32>,
-
-    /// Filter by trace ID (correlate logs with traces)
     pub trace_id: Option<String>,
-
-    /// Filter by span ID (correlate logs with specific spans)
     pub span_id: Option<String>,
-
-    /// Full-text search in log body
     pub body_contains: Option<String>,
-
-    /// Filter by attributes
     #[serde(default)]
     pub attributes: HashMap<String, String>,
-
-    /// Maximum number of results
     #[serde(default = "default_limit")]
     pub limit: usize,
-
-    /// Offset for pagination
     #[serde(default)]
     pub offset: usize,
 }
 
+impl Default for LogFilter {
+    fn default() -> Self {
+        Self {
+            time_range: TimeRange::default(),
+            service: None,
+            severity: None,
+            min_severity_number: None,
+            trace_id: None,
+            span_id: None,
+            body_contains: None,
+            attributes: HashMap::new(),
+            limit: default_limit(),
+            offset: 0,
+        }
+    }
+}
+
 /// Filter for metric queries
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricFilter {
-    /// Filter by time range
     #[serde(default)]
     pub time_range: TimeRange,
-
-    /// Filter by service name
     pub service: Option<String>,
-
-    /// Filter by metric name (exact match or prefix)
     pub name: Option<String>,
-
-    /// Filter by metric type (gauge, counter, histogram, summary)
     pub metric_type: Option<MetricType>,
-
-    /// Filter by attributes/labels
     #[serde(default)]
     pub attributes: HashMap<String, String>,
-
-    /// Aggregation function for time series
     pub aggregation: Option<MetricAggregation>,
-
-    /// Time bucket size for aggregation (in seconds)
     pub bucket_secs: Option<u64>,
-
-    /// Maximum number of results
     #[serde(default = "default_limit")]
     pub limit: usize,
+}
+
+impl Default for MetricFilter {
+    fn default() -> Self {
+        Self {
+            time_range: TimeRange::default(),
+            service: None,
+            name: None,
+            metric_type: None,
+            attributes: HashMap::new(),
+            aggregation: None,
+            bucket_secs: None,
+            limit: default_limit(),
+        }
+    }
 }
 
 /// Metric types
@@ -233,198 +220,102 @@ pub enum MetricAggregation {
 /// Summary of a service
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceSummary {
-    /// Service name
     pub name: String,
-
-    /// Total span count in the time range
     pub span_count: u64,
-
-    /// Number of unique operations
     pub operation_count: u64,
-
-    /// Error rate (0.0 - 1.0)
     pub error_rate: f64,
-
-    /// Average duration in nanoseconds
     pub avg_duration_ns: i64,
-
-    /// P99 duration in nanoseconds
     pub p99_duration_ns: Option<i64>,
-
-    /// First span time in the range
     pub first_seen: DateTime<Utc>,
-
-    /// Last span time in the range
     pub last_seen: DateTime<Utc>,
 }
 
 /// Health metrics for a service
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceHealth {
-    /// Service name
     pub service: String,
-
-    /// Request rate (spans per second)
     pub request_rate: f64,
-
-    /// Error rate (0.0 - 1.0)
     pub error_rate: f64,
-
-    /// Average latency in milliseconds
     pub avg_latency_ms: f64,
-
-    /// P50 latency in milliseconds
     pub p50_latency_ms: f64,
-
-    /// P95 latency in milliseconds
     pub p95_latency_ms: f64,
-
-    /// P99 latency in milliseconds
     pub p99_latency_ms: f64,
-
-    /// Throughput (successful requests per second)
     pub throughput: f64,
-
-    /// Apdex score (0.0 - 1.0) with default threshold
     pub apdex: Option<f64>,
 }
 
 /// Comparison between two time periods
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Comparison {
-    /// Period A metrics
     pub period_a: PeriodMetrics,
-
-    /// Period B metrics
     pub period_b: PeriodMetrics,
-
-    /// Change in error rate (positive = increased)
     pub error_rate_delta: f64,
-
-    /// Change in average latency (positive = slower)
     pub latency_delta_ms: f64,
-
-    /// Change in throughput (positive = increased)
     pub throughput_delta: f64,
-
-    /// Change in request count (positive = increased)
     pub request_count_delta: i64,
 }
 
 /// Metrics for a single period
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeriodMetrics {
-    /// Time range for this period
     pub time_range: TimeRange,
-
-    /// Total request count
     pub request_count: u64,
-
-    /// Error count
     pub error_count: u64,
-
-    /// Error rate (0.0 - 1.0)
     pub error_rate: f64,
-
-    /// Average latency in milliseconds
     pub avg_latency_ms: f64,
-
-    /// Throughput (requests per second)
     pub throughput: f64,
 }
 
 /// Schema information for discovery
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Schema {
-    /// Available tables/collections
     pub tables: Vec<TableSchema>,
-
-    /// Available attribute keys for spans
     pub span_attribute_keys: Vec<String>,
-
-    /// Available resource attribute keys
     pub resource_attribute_keys: Vec<String>,
-
-    /// Available log attribute keys
     pub log_attribute_keys: Vec<String>,
-
-    /// Available metric names
     pub metric_names: Vec<String>,
 }
 
 /// Schema for a single table
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableSchema {
-    /// Table name
     pub name: String,
-
-    /// Signal type this table contains
     pub signal: Signal,
-
-    /// Column definitions
     pub columns: Vec<ColumnSchema>,
 }
 
 /// Schema for a single column
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnSchema {
-    /// Column name
     pub name: String,
-
-    /// Column data type
     pub data_type: String,
-
-    /// Whether column is nullable
     pub nullable: bool,
-
-    /// Description of the column
     pub description: Option<String>,
 }
 
 /// Column mapping for external backends (ClickHouse, etc.)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnMapping {
-    /// Table name for spans
     #[serde(default = "default_spans_table")]
     pub spans_table: String,
-
-    /// Column name for trace_id
     #[serde(default = "default_trace_id")]
     pub trace_id: String,
-
-    /// Column name for span_id
     #[serde(default = "default_span_id")]
     pub span_id: String,
-
-    /// Column name for parent_span_id
     #[serde(default = "default_parent_span_id")]
     pub parent_span_id: String,
-
-    /// Column name for service_name
     #[serde(default = "default_service_name")]
     pub service_name: String,
-
-    /// Column name for operation/span_name
     #[serde(default = "default_operation")]
     pub operation: String,
-
-    /// Column name for start_time
     #[serde(default = "default_start_time")]
     pub start_time: String,
-
-    /// Column name for duration
     #[serde(default = "default_duration")]
     pub duration: String,
-
-    /// Column name for status
     #[serde(default = "default_status")]
     pub status: String,
-
-    /// Column name for attributes (Map type)
     #[serde(default = "default_attributes")]
     pub attributes: String,
-
-    /// Column name for resource attributes
     #[serde(default = "default_resource_attrs")]
     pub resource_attrs: String,
 }
@@ -463,42 +354,43 @@ fn default_resource_attrs() -> String {
     "ResourceAttributes".to_string()
 }
 
+impl Default for ColumnMapping {
+    fn default() -> Self {
+        Self {
+            spans_table: default_spans_table(),
+            trace_id: default_trace_id(),
+            span_id: default_span_id(),
+            parent_span_id: default_parent_span_id(),
+            service_name: default_service_name(),
+            operation: default_operation(),
+            start_time: default_start_time(),
+            duration: default_duration(),
+            status: default_status(),
+            attributes: default_attributes(),
+            resource_attrs: default_resource_attrs(),
+        }
+    }
+}
+
 /// Field mapping for Splunk
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldMapping {
-    /// Index to search
     #[serde(default = "default_splunk_index")]
     pub index: String,
-
-    /// Source type for traces
     #[serde(default = "default_splunk_sourcetype")]
     pub sourcetype: String,
-
-    /// Field name for trace_id
     #[serde(default = "default_trace_id_field")]
     pub trace_id: String,
-
-    /// Field name for span_id
     #[serde(default = "default_span_id_field")]
     pub span_id: String,
-
-    /// Field name for parent_span_id
     #[serde(default = "default_parent_span_id_field")]
     pub parent_span_id: String,
-
-    /// Field name for service
     #[serde(default = "default_service_field")]
     pub service: String,
-
-    /// Field name for operation
     #[serde(default = "default_operation_field")]
     pub operation: String,
-
-    /// Field name for duration
     #[serde(default = "default_duration_field")]
     pub duration: String,
-
-    /// Field name for status
     #[serde(default = "default_status_field")]
     pub status: String,
 }
@@ -529,6 +421,22 @@ fn default_duration_field() -> String {
 }
 fn default_status_field() -> String {
     "status.code".to_string()
+}
+
+impl Default for FieldMapping {
+    fn default() -> Self {
+        Self {
+            index: default_splunk_index(),
+            sourcetype: default_splunk_sourcetype(),
+            trace_id: default_trace_id_field(),
+            span_id: default_span_id_field(),
+            parent_span_id: default_parent_span_id_field(),
+            service: default_service_field(),
+            operation: default_operation_field(),
+            duration: default_duration_field(),
+            status: default_status_field(),
+        }
+    }
 }
 
 #[cfg(test)]

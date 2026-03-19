@@ -63,42 +63,7 @@ pub struct Span {
     pub resource_attrs: Vec<(String, String)>,
 }
 
-/// A span row as stored in SQLite/Parquet
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SpanRow {
-    pub trace_id: String,
-    pub span_id: String,
-    pub parent_span_id: Option<String>,
-    pub session_id: Option<String>,
-    pub service_name: String,
-    pub operation: String,
-    pub start_time: i64,
-    pub duration_ns: i64,
-    pub status: i32,
-    pub attributes: String,      // JSON
-    pub resource_attrs: String,  // JSON
-    pub created_at: i64,
-}
-
 impl Span {
-    /// Convert to a storage row
-    pub fn to_row(&self) -> SpanRow {
-        SpanRow {
-            trace_id: self.trace_id.clone(),
-            span_id: self.span_id.clone(),
-            parent_span_id: self.parent_span_id.clone(),
-            session_id: self.session_id.clone(),
-            service_name: self.service_name.clone(),
-            operation: self.operation.clone(),
-            start_time: self.start_time,
-            duration_ns: self.duration_ns,
-            status: self.status.into(),
-            attributes: serde_json::to_string(&self.attributes).unwrap_or_default(),
-            resource_attrs: serde_json::to_string(&self.resource_attrs).unwrap_or_default(),
-            created_at: chrono::Utc::now().timestamp(),
-        }
-    }
-
     /// Get an attribute value by key
     pub fn get_attr(&self, key: &str) -> Option<&str> {
         self.attributes
@@ -113,35 +78,6 @@ impl Span {
             .iter()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_str())
-    }
-}
-
-impl SpanRow {
-    /// Parse attributes from JSON
-    pub fn parse_attributes(&self) -> Vec<(String, String)> {
-        serde_json::from_str(&self.attributes).unwrap_or_default()
-    }
-
-    /// Parse resource attributes from JSON
-    pub fn parse_resource_attrs(&self) -> Vec<(String, String)> {
-        serde_json::from_str(&self.resource_attrs).unwrap_or_default()
-    }
-
-    /// Convert to a Span
-    pub fn to_span(&self) -> Span {
-        Span {
-            trace_id: self.trace_id.clone(),
-            span_id: self.span_id.clone(),
-            parent_span_id: self.parent_span_id.clone(),
-            session_id: self.session_id.clone(),
-            service_name: self.service_name.clone(),
-            operation: self.operation.clone(),
-            start_time: self.start_time,
-            duration_ns: self.duration_ns,
-            status: SpanStatus::from(self.status),
-            attributes: self.parse_attributes(),
-            resource_attrs: self.parse_resource_attrs(),
-        }
     }
 }
 
@@ -262,64 +198,13 @@ pub struct LogRecord {
     pub resource_attrs: Vec<(String, String)>,
 }
 
-/// A log row as stored in SQLite/Parquet
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogRow {
-    pub timestamp: i64,
-    pub observed_timestamp: Option<i64>,
-    pub trace_id: Option<String>,
-    pub span_id: Option<String>,
-    pub severity_number: i32,
-    pub severity_text: Option<String>,
-    pub body: String,
-    pub service_name: String,
-    pub attributes: String,      // JSON
-    pub resource_attrs: String,  // JSON
-    pub created_at: i64,
-}
-
 impl LogRecord {
-    /// Convert to a storage row
-    pub fn to_row(&self) -> LogRow {
-        LogRow {
-            timestamp: self.timestamp,
-            observed_timestamp: self.observed_timestamp,
-            trace_id: self.trace_id.clone(),
-            span_id: self.span_id.clone(),
-            severity_number: self.severity_number as i32,
-            severity_text: self.severity_text.clone(),
-            body: self.body.clone(),
-            service_name: self.service_name.clone(),
-            attributes: serde_json::to_string(&self.attributes).unwrap_or_default(),
-            resource_attrs: serde_json::to_string(&self.resource_attrs).unwrap_or_default(),
-            created_at: chrono::Utc::now().timestamp(),
-        }
-    }
-
     /// Get an attribute value by key
     pub fn get_attr(&self, key: &str) -> Option<&str> {
         self.attributes
             .iter()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_str())
-    }
-}
-
-impl LogRow {
-    /// Convert to a LogRecord
-    pub fn to_log(&self) -> LogRecord {
-        LogRecord {
-            timestamp: self.timestamp,
-            observed_timestamp: self.observed_timestamp,
-            trace_id: self.trace_id.clone(),
-            span_id: self.span_id.clone(),
-            severity_number: SeverityLevel::from(self.severity_number),
-            severity_text: self.severity_text.clone(),
-            body: self.body.clone(),
-            service_name: self.service_name.clone(),
-            attributes: serde_json::from_str(&self.attributes).unwrap_or_default(),
-            resource_attrs: serde_json::from_str(&self.resource_attrs).unwrap_or_default(),
-        }
     }
 }
 
@@ -387,50 +272,7 @@ pub struct Metric {
     pub resource_attrs: Vec<(String, String)>,
 }
 
-/// A metric row as stored in SQLite/Parquet
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetricRow {
-    pub name: String,
-    pub description: Option<String>,
-    pub unit: Option<String>,
-    pub kind: String,
-    pub timestamp: i64,
-    pub service_name: String,
-    pub value: Option<f64>,
-    pub sum: Option<f64>,
-    pub count: Option<i64>,
-    pub min: Option<f64>,
-    pub max: Option<f64>,
-    pub quantiles: Option<String>,  // JSON
-    pub buckets: Option<String>,    // JSON
-    pub attributes: String,         // JSON
-    pub resource_attrs: String,     // JSON
-    pub created_at: i64,
-}
-
 impl Metric {
-    /// Convert to a storage row
-    pub fn to_row(&self) -> MetricRow {
-        MetricRow {
-            name: self.name.clone(),
-            description: self.description.clone(),
-            unit: self.unit.clone(),
-            kind: format!("{:?}", self.kind).to_lowercase(),
-            timestamp: self.timestamp,
-            service_name: self.service_name.clone(),
-            value: self.value,
-            sum: self.sum,
-            count: self.count.map(|c| c as i64),
-            min: self.min,
-            max: self.max,
-            quantiles: self.quantiles.as_ref().map(|q| serde_json::to_string(q).unwrap_or_default()),
-            buckets: self.buckets.as_ref().map(|b| serde_json::to_string(b).unwrap_or_default()),
-            attributes: serde_json::to_string(&self.attributes).unwrap_or_default(),
-            resource_attrs: serde_json::to_string(&self.resource_attrs).unwrap_or_default(),
-            created_at: chrono::Utc::now().timestamp(),
-        }
-    }
-
     /// Get an attribute value by key
     pub fn get_attr(&self, key: &str) -> Option<&str> {
         self.attributes
@@ -440,42 +282,12 @@ impl Metric {
     }
 }
 
-impl MetricRow {
-    /// Convert to a Metric
-    pub fn to_metric(&self) -> Metric {
-        let kind = match self.kind.as_str() {
-            "counter" => MetricKind::Counter,
-            "histogram" => MetricKind::Histogram,
-            "summary" => MetricKind::Summary,
-            _ => MetricKind::Gauge,
-        };
-
-        Metric {
-            name: self.name.clone(),
-            description: self.description.clone(),
-            unit: self.unit.clone(),
-            kind,
-            timestamp: self.timestamp,
-            service_name: self.service_name.clone(),
-            value: self.value,
-            sum: self.sum,
-            count: self.count.map(|c| c as u64),
-            min: self.min,
-            max: self.max,
-            quantiles: self.quantiles.as_ref().and_then(|q| serde_json::from_str(q).ok()),
-            buckets: self.buckets.as_ref().and_then(|b| serde_json::from_str(b).ok()),
-            attributes: serde_json::from_str(&self.attributes).unwrap_or_default(),
-            resource_attrs: serde_json::from_str(&self.resource_attrs).unwrap_or_default(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_span_to_row() {
+    fn test_span_accessors() {
         let span = Span {
             trace_id: "abc123".to_string(),
             span_id: "def456".to_string(),
@@ -490,10 +302,10 @@ mod tests {
             resource_attrs: vec![("service.name".to_string(), "test".to_string())],
         };
 
-        let row = span.to_row();
-        assert_eq!(row.trace_id, "abc123");
-        assert_eq!(row.service_name, "test-service");
-        assert_eq!(row.status, 1);
+        assert_eq!(span.trace_id, "abc123");
+        assert_eq!(span.service_name, "test-service");
+        assert_eq!(span.get_attr("key"), Some("value"));
+        assert_eq!(span.get_resource_attr("service.name"), Some("test"));
     }
 
     #[test]
