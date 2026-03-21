@@ -54,6 +54,24 @@ run-lite:
 run-pro:
   cargo run --bin tinyobs-pro-server --features pro --no-default-features
 
+# ─── CLI & MCP ───────────────────────────────────────
+
+# Build CLI
+build-cli:
+  cargo build --bin tinyobs-cli --features cli
+
+# Build MCP server
+build-mcp:
+  cargo build --bin tinyobs-mcp --features mcp
+
+# Run CLI with arguments (e.g. just cli health)
+cli *ARGS:
+  cargo run --bin tinyobs-cli --features cli -- {{ARGS}}
+
+# Run MCP server
+run-mcp:
+  cargo run --bin tinyobs-mcp --features mcp
+
 # ─── Docker (Lite) ────────────────────────────────────
 
 # Build and run tinyobs lite in Docker

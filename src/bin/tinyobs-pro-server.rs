@@ -13,6 +13,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
+use tinyobs::api_types::{HealthResponse, LogQuery, MetricQuery, RawQueryRequest, TraceQuery};
 use tinyobs::backend::*;
 use tinyobs::config::{ApplicationSettings, IngestConfig};
 use tinyobs::server::{self, IngestState};
@@ -188,44 +189,6 @@ impl ManagedBackend for ProBackend {
 // Query API types and handlers
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
-struct TraceQuery {
-    service: Option<String>,
-    limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LogQuery {
-    service: Option<String>,
-    severity: Option<String>,
-    trace_id: Option<String>,
-    body_contains: Option<String>,
-    limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MetricQuery {
-    service: Option<String>,
-    name: Option<String>,
-    limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawQueryRequest {
-    sql: String,
-    #[serde(default = "default_limit")]
-    limit: usize,
-}
-
-fn default_limit() -> usize {
-    100
-}
-
-#[derive(Debug, Serialize)]
-struct HealthResponse {
-    status: String,
-    backend: bool,
-}
 
 async fn api_health(State(backend): State<ProBackend>) -> Json<HealthResponse> {
     let ch_ok = backend.health_check().await.unwrap_or(false);

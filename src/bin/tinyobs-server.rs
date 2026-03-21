@@ -2,18 +2,18 @@
 
 use anyhow::Result;
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::Json,
     routing::{get, post},
     Router,
 };
-use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use tokio::net::TcpListener;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 
-use tinyobs::backend::{ChBackend, ManagedBackend, TelemetryBackend};
+use tinyobs::api_types::{HealthResponse, LogQuery, MetricQuery, RawQueryRequest, TraceQuery};
+use tinyobs::backend::*;
 use tinyobs::config::{ApplicationSettings, IngestConfig, StorageConfig};
 use tinyobs::server::{self, IngestState};
 use tinyobs::transport::chdb::ChdbTransport;
@@ -54,60 +54,97 @@ impl LiteConfig {
 
 type LiteBackend = ChBackend<ChdbTransport>;
 
-#[derive(Debug, Deserialize)]
-struct QueryRequest {
-    sql: String,
+async fn api_health(State(backend): State<LiteBackend>) -> Json<HealthResponse> {
+    let ch_ok = backend.health_check().await.unwrap_or(false);
+    Json(HealthResponse {
+        status: if ch_ok { "ok".to_string() } else { "degraded".to_string() },
+        backend: ch_ok,
+    })
 }
 
-#[derive(Debug, Serialize)]
-struct QueryResponse {
-    data: Vec<serde_json::Value>,
-}
-
-async fn execute_query(
+async fn api_list_traces(
     State(backend): State<LiteBackend>,
-    Json(request): Json<QueryRequest>,
-) -> Result<Json<QueryResponse>, (StatusCode, String)> {
-    let data = backend
-        .raw_query(&request.sql, 1000)
+    Query(q): Query<TraceQuery>,
+) -> Result<Json<Vec<tinyobs::Span>>, (StatusCode, String)> {
+    let filter = SpanFilter {
+        service: q.service,
+        limit: q.limit.unwrap_or(100),
+        ..Default::default()
+    };
+    let spans = backend
+        .query_spans(filter)
         .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-
-    Ok(Json(QueryResponse { data }))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(spans))
 }
 
-async fn list_traces(State(backend): State<LiteBackend>) -> Json<Vec<serde_json::Value>> {
-    let data = backend
-        .raw_query(
-            r#"
-            SELECT
-                TraceId as trace_id,
-                ServiceName as service_name,
-                COUNT(*) as span_count,
-                MIN(Timestamp) as started_at
-            FROM otel_traces
-            GROUP BY TraceId, ServiceName
-            ORDER BY started_at DESC
-            LIMIT 100
-            "#,
-            100,
-        )
-        .await
-        .unwrap_or_default();
-
-    Json(data)
-}
-
-async fn get_trace(
+async fn api_get_trace(
     State(backend): State<LiteBackend>,
     axum::extract::Path(trace_id): axum::extract::Path<String>,
-) -> Json<Vec<tinyobs::Span>> {
+) -> Result<Json<Vec<tinyobs::Span>>, (StatusCode, String)> {
     let spans = backend
         .get_trace(&trace_id)
         .await
-        .unwrap_or_default();
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(spans))
+}
 
-    Json(spans)
+async fn api_list_logs(
+    State(backend): State<LiteBackend>,
+    Query(q): Query<LogQuery>,
+) -> Result<Json<Vec<tinyobs::LogRecord>>, (StatusCode, String)> {
+    let filter = LogFilter {
+        service: q.service,
+        severity: q.severity,
+        trace_id: q.trace_id,
+        body_contains: q.body_contains,
+        limit: q.limit.unwrap_or(100),
+        ..Default::default()
+    };
+    let logs = backend
+        .query_logs(filter)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(logs))
+}
+
+async fn api_list_metrics(
+    State(backend): State<LiteBackend>,
+    Query(q): Query<MetricQuery>,
+) -> Result<Json<Vec<tinyobs::Metric>>, (StatusCode, String)> {
+    let filter = MetricFilter {
+        service: q.service,
+        name: q.name,
+        limit: q.limit.unwrap_or(100),
+        ..Default::default()
+    };
+    let metrics = backend
+        .query_metrics(filter)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(metrics))
+}
+
+async fn api_list_services(
+    State(backend): State<LiteBackend>,
+) -> Result<Json<Vec<ServiceSummary>>, (StatusCode, String)> {
+    let time_range = TimeRange::last_day();
+    let services = backend
+        .list_services(time_range)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(services))
+}
+
+async fn api_raw_query(
+    State(backend): State<LiteBackend>,
+    Json(request): Json<RawQueryRequest>,
+) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, String)> {
+    let rows = backend
+        .raw_query(&request.sql, request.limit)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(rows))
 }
 
 // ============================================================================
@@ -137,11 +174,15 @@ async fn main() -> Result<()> {
         config: Arc::new(config.ingest.clone()),
     };
 
-    // Lite-specific API routes
+    // API routes (same shape as pro)
     let api_router = Router::new()
-        .route("/api/traces", get(list_traces))
-        .route("/api/traces/{trace_id}", get(get_trace))
-        .route("/query", post(execute_query))
+        .route("/api/traces", get(api_list_traces))
+        .route("/api/traces/{trace_id}", get(api_get_trace))
+        .route("/api/logs", get(api_list_logs))
+        .route("/api/metrics", get(api_list_metrics))
+        .route("/api/services", get(api_list_services))
+        .route("/api/health", get(api_health))
+        .route("/api/query", post(api_raw_query))
         .with_state(backend.clone());
 
     let full_app = Router::new()
@@ -152,13 +193,6 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
 
     tracing::info!("TinyObs listening on port {}", config.application.port);
-    tracing::info!("  POST /v1/traces      - OTLP trace ingestion");
-    tracing::info!("  POST /v1/logs        - OTLP logs ingestion");
-    tracing::info!("  POST /v1/metrics     - OTLP metrics ingestion");
-    tracing::info!("  GET  /health         - Health check");
-    tracing::info!("  GET  /api/traces     - List traces");
-    tracing::info!("  GET  /api/traces/:id - Get trace detail");
-    tracing::info!("  POST /query          - Execute SQL query");
 
     axum::serve(listener, full_app).await?;
 
