@@ -168,6 +168,9 @@ async fn main() -> Result<()> {
     let transport = ChdbTransport::new(&config.chdb_data_path())?;
     let backend = ChBackend::new(transport);
 
+    // Initialize OTEL schema tables
+    backend.init_schema().await?;
+
     // Build ingest state
     let ingest_state = IngestState {
         backend: backend.clone(),

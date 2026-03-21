@@ -8,7 +8,6 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -104,6 +103,9 @@ impl TelemetryBackend for ProBackend {
     async fn discover_schema(&self) -> Result<Schema> {
         self.inner.discover_schema().await
     }
+    async fn execute_raw(&self, sql: &str) -> Result<()> {
+        self.inner.execute_raw(sql).await
+    }
 }
 
 /// Override IngestBackend to use typed Inserters instead of SQL INSERT VALUES
@@ -169,6 +171,10 @@ impl IngestBackend for ProBackend {
 
 #[async_trait::async_trait]
 impl ManagedBackend for ProBackend {
+    async fn init_schema(&self) -> Result<()> {
+        self.inner.init_schema().await
+    }
+
     async fn start_background_tasks(&self) -> Result<()> {
         Ok(())
     }
@@ -315,6 +321,9 @@ async fn main() -> Result<()> {
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
+
+    // Initialize OTEL schema tables
+    backend.init_schema().await?;
 
     // Build ingest state
     let ingest_state = IngestState {

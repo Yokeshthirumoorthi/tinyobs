@@ -29,6 +29,9 @@ pub trait TelemetryBackend: Send + Sync {
     ) -> Result<Comparison>;
     async fn raw_query(&self, query: &str, limit: usize) -> Result<Vec<serde_json::Value>>;
     async fn discover_schema(&self) -> Result<Schema>;
+
+    /// Execute a raw SQL statement (DDL, DML). Use for custom table creation.
+    async fn execute_raw(&self, sql: &str) -> Result<()>;
 }
 
 /// Backend type enumeration
@@ -63,6 +66,8 @@ pub trait IngestBackend: TelemetryBackend {
 /// Extension trait for backends with lifecycle management
 #[async_trait]
 pub trait ManagedBackend: TelemetryBackend {
+    /// Initialize the standard OTEL schema tables. Safe to call multiple times.
+    async fn init_schema(&self) -> Result<()>;
     async fn start_background_tasks(&self) -> Result<()>;
     async fn stop_background_tasks(&self) -> Result<()>;
     async fn health_check(&self) -> Result<bool>;
@@ -155,6 +160,10 @@ impl<T: Transport> TelemetryBackend for ChBackend<T> {
         self.transport.query_json(&sql).await
     }
 
+    async fn execute_raw(&self, sql: &str) -> Result<()> {
+        self.transport.execute(sql).await
+    }
+
     async fn discover_schema(&self) -> Result<Schema> {
         let span_keys = self
             .attribute_keys(Signal::Traces, None)
@@ -245,9 +254,16 @@ impl<T: Transport> IngestBackend for ChBackend<T> {
     }
 }
 
-/// Default ManagedBackend for ChBackend — no-op lifecycle
+/// Default ManagedBackend for ChBackend
 #[async_trait]
 impl<T: Transport> ManagedBackend for ChBackend<T> {
+    async fn init_schema(&self) -> Result<()> {
+        self.transport.execute(ch::CREATE_OTEL_TRACES).await?;
+        self.transport.execute(ch::CREATE_OTEL_LOGS).await?;
+        self.transport.execute(ch::CREATE_OTEL_METRICS).await?;
+        Ok(())
+    }
+
     async fn start_background_tasks(&self) -> Result<()> {
         Ok(())
     }

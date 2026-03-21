@@ -18,7 +18,7 @@ pub struct ChdbTransport {
 }
 
 impl ChdbTransport {
-    /// Create a new chdb transport, initializing tables via DDL
+    /// Create a new chdb transport. Call `init_schema()` on the backend to create tables.
     pub fn new(data_path: &str) -> Result<Self> {
         std::fs::create_dir_all(data_path)?;
 
@@ -26,17 +26,6 @@ impl ChdbTransport {
             .with_data_path(data_path)
             .build()
             .context("Failed to create chdb session")?;
-
-        // Run DDL to create tables
-        session
-            .execute(ch::CREATE_OTEL_TRACES, None)
-            .context("Failed to create otel_traces table")?;
-        session
-            .execute(ch::CREATE_OTEL_LOGS, None)
-            .context("Failed to create otel_logs table")?;
-        session
-            .execute(ch::CREATE_OTEL_METRICS, None)
-            .context("Failed to create otel_metrics table")?;
 
         Ok(Self {
             session: Arc::new(Mutex::new(session)),
