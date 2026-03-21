@@ -69,6 +69,26 @@ impl TinyObs<ChBackend<transport::chdb::ChdbTransport>> {
     }
 }
 
+#[cfg(feature = "pro")]
+impl TinyObs<ChBackend<transport::remote::RemoteTransport>> {
+    /// Create a TinyObs instance with a remote ClickHouse backend.
+    ///
+    /// Call `init_schema()` after creation to set up OTEL tables.
+    pub fn pro(url: &str, database: &str) -> Result<Self> {
+        let config = transport::remote::BackendConfig {
+            url: url.to_string(),
+            database: database.to_string(),
+            ..Default::default()
+        };
+        let transport = transport::remote::RemoteTransport::new(config);
+        let backend = ChBackend::new(transport);
+        Ok(Self {
+            backend,
+            ingest_config: Arc::new(config::IngestConfig::default()),
+        })
+    }
+}
+
 impl<B: IngestBackend + ManagedBackend + Clone + 'static> TinyObs<B> {
     /// Create a TinyObs instance from an existing backend.
     pub fn new(backend: B) -> Self {

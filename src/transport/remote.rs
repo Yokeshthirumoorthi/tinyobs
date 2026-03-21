@@ -194,6 +194,7 @@ impl Default for BackendConfig {
 // ============================================================================
 
 /// Remote ClickHouse transport via HTTP
+#[derive(Clone)]
 pub struct RemoteTransport {
     http: HttpClient,
     config: Arc<BackendConfig>,
