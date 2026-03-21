@@ -80,6 +80,18 @@ client = ["dep:reqwest"]
 cli = ["client", "dep:clap"]
 mcp = ["client", "dep:rmcp"]
 
+[[example]]
+name = "basic"
+required-features = ["lite"]
+
+[[example]]
+name = "custom_tables"
+required-features = ["lite"]
+
+[[example]]
+name = "axum_app"
+required-features = ["lite"]
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"
